@@ -1,490 +1,485 @@
-import streamlit as st  # Mengimpor library Streamlit untuk membuat antarmuka aplikasi web
-import pandas as pd  # Mengimpor pandas untuk mengolah data tabel / CSV dan DataFrame
-import joblib  # Mengimpor joblib untuk memuat model machine learning yang sudah disimpan (.joblib)
-import os  # Mengimpor os untuk mengecek keberadaan file di folder proyek
-from groq import Groq  # Mengimpor klien Groq untuk memanggil model LLM (AI chatbot/FAQ)
+import streamlit as st  # Mengimpor library Streamlit untuk membangun antarmuka web interaktif
+import pandas as pd  # Mengimpor pandas untuk membaca dan mengolah data CSV dalam bentuk DataFrame
+import joblib  # Mengimpor joblib untuk memuat model machine learning (.joblib)
+import os  # Mengimpor os untuk memeriksa apakah file model atau dataset tersedia di direktori
+from groq import Groq  # Mengimpor Groq client untuk fitur asisten tanya-jawab berbasis LLM
 
 # ==========================================
 # 1. KONFIGURASI HALAMAN
 # ==========================================
-st.set_page_config(  # Mengatur konfigurasi dasar halaman web Streamlit
-    page_title="MadiunKos — Cari & Prediksi Hunian Madiun",  # Judul tab di browser
-    page_icon="🏠",  # Ikon tab di browser
-    layout="wide",  # Menggunakan lebar layar penuh (wide layout)
-    initial_sidebar_state="expanded"  # Membuka sidebar secara default saat aplikasi pertama dibuka
+st.set_page_config(  # Mengatur konfigurasi dasar halaman Streamlit
+    page_title="MadiunKos — Cari & Prediksi Hunian Madiun",  # Menentukan judul tab di browser
+    page_icon="🏠",  # Menentukan ikon tab di browser
+    layout="wide",  # Mengatur tata letak halaman agar melebar penuh
+    initial_sidebar_state="expanded"  # Membuka sidebar di sebelah kiri saat pertama kali dibuka
 )
 
-BRAND_SVG = (  # Menyimpan kode SVG logo rumah hijau ala Bibit dalam bentuk string
-    '<svg width="38" height="38" viewBox="0 0 38 38" fill="none" xmlns="http://www.w3.org/2000/svg">'  # Elemen pembungkus SVG ukuran 38x38 piksel
-    '<rect width="38" height="38" rx="11" fill="#00B87C"/>'  # Kotak latar belakang berwarna hijau segar (#00B87C) dengan sudut membulat
-    '<path d="M11 19.2L19 12L27 19.2V27H21.2V21.5H16.8V27H11V19.2Z" fill="#FFFFFF"/>'  # Bentuk siluet rumah berwarna putih
-    '<circle cx="28.5" cy="10.5" r="3.5" fill="#B8F3DF"/>'  # Lingkaran aksen hijau muda di pojok kanan atas logo
-    '</svg>'  # Menutup tag SVG
+BRAND_SVG = (  # Menyimpan kode ikon SVG berwarna hijau ala Bibit (#00B87C)
+    '<svg width="38" height="38" viewBox="0 0 38 38" fill="none" xmlns="http://www.w3.org/2000/svg">'
+    '<rect width="38" height="38" rx="11" fill="#00B87C"/>'
+    '<path d="M11 19.2L19 12L27 19.2V27H21.2V21.5H16.8V27H11V19.2Z" fill="#FFFFFF"/>'
+    '<circle cx="28.5" cy="10.5" r="3.5" fill="#B8F3DF"/>'
+    '</svg>'
 )
 
-st.markdown("""  # Menyisipkan kode CSS kustom ke halaman Streamlit agar tampilan menyerupai aplikasi modern
-<style>  # Awal blok gaya CSS
-    @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap');  # Memuat font Plus Jakarta Sans dari Google Fonts
+# Menyuntikkan CSS tema hijau ala Bibit, tata letak sidebar, kartu metrik, dan kartu kos 2 kolom
+st.markdown("""
+<style>
+    @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap');
 
-    html, body, [class*="css"] {  # Menerapkan font ke seluruh elemen halaman
-        font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif;  # Keluarga font utama dengan cadangan sistem
-    }
-
-    header[data-testid="stHeader"] {  # Mengatur header bawaan Streamlit
-        background: transparent !important;  # Membuat latar header transparan
-    }
-    [data-testid="stDecoration"] {  # Menargetkan garis dekorasi atas Streamlit
-        display: none;  # Menyembunyikan garis dekorasi bawaan
+    html, body, [class*="css"] {
+        font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif;
     }
 
-    .stApp {  # Latar belakang utama aplikasi
-        background-color: #f7fbf9;  # Warna hijau keputihan yang lembut ala Bibit
-        color: #111827;  # Warna teks utama gelap agar kontras
+    header[data-testid="stHeader"] {
+        background: transparent !important;
+    }
+    [data-testid="stDecoration"] {
+        display: none;
     }
 
-    /* Sidebar putih bersih ala Bibit */
-    section[data-testid="stSidebar"] {  # Panel sidebar di sisi kiri
-        background-color: #ffffff !important;  # Latar putih bersih
-        border-right: 1px solid #e5efea !important;  # Garis pembatas tipis di kanan sidebar
-    }
-    section[data-testid="stSidebar"] .block-container {  # Jarak dalam konten sidebar
-        padding-top: 1.35rem;  # Padding atas
-        padding-bottom: 2rem;  # Padding bawah
-    }
-    .sb-brand {  # Kotak identitas merek di bagian atas sidebar
-        display: flex;  # Susunan fleksibel horizontal
-        align-items: center;  # Rata tengah secara vertikal
-        gap: 12px;  # Jarak antar elemen
-        padding-bottom: 15px;  # Jarak bawah
-        margin-bottom: 15px;  # Margin bawah
-        border-bottom: 1px solid #eef5f1;  # Garis pemisah tipis
-    }
-    .sb-name {  # Judul merek MadiunKos
-        font-size: 1.15rem;  # Ukuran huruf
-        font-weight: 800;  # Ketebalan huruf ekstra tebal
-        color: #111827;  # Warna teks gelap
-        letter-spacing: -0.02em;  # Perapatan jarak antar huruf sedikit
-        line-height: 1.1;  # Tinggi baris rapat
-    }
-    .sb-tag {  # Subjudul kecil di bawah nama merek
-        font-size: 0.73rem;  # Ukuran huruf kecil
-        font-weight: 700;  # Huruf tebal
-        color: #00b87c;  # Warna hijau utama Bibit
-        margin-top: 2px;  # Jarak atas kecil
-    }
-    .sb-sec {  # Label judul bagian menu di sidebar
-        font-size: 0.7rem;  # Ukuran huruf kecil
-        font-weight: 700;  # Huruf tebal
-        text-transform: uppercase;  # Huruf kapital semua
-        letter-spacing: 0.07em;  # Jarak antar huruf
-        color: #6b7280;  # Warna abu-abu sedang
-        margin-bottom: 8px;  # Jarak bawah
+    .stApp {
+        background-color: #f7fbf9;
+        color: #111827;
     }
 
-    section[data-testid="stSidebar"] div[role="radiogroup"] {  # Wadah pilihan radio navigasi di sidebar
-        display: flex;  # Susunan flex
-        flex-direction: column;  # Susun ke bawah secara vertikal
-        gap: 6px;  # Jarak antar item menu
-        background: transparent !important;  # Latar transparan
-        padding: 0 !important;  # Tanpa padding luar
-        border: none !important;  # Tanpa border luar
-        box-shadow: none !important;  # Tanpa bayangan
-        margin-bottom: 18px;  # Jarak bawah sebelum info status
-        width: 100%;  # Lebar penuh sidebar
+    section[data-testid="stSidebar"] {
+        background-color: #ffffff !important;
+        border-right: 1px solid #e5efea !important;
     }
-    section[data-testid="stSidebar"] div[role="radiogroup"] > label {  # Setiap tombol menu navigasi
-        background-color: #ffffff !important;  # Latar putih
-        border: 1px solid #e5efea !important;  # Border tipis hijau pucat
-        border-radius: 10px !important;  # Sudut membulat
-        padding: 10px 13px !important;  # Ruang dalam tombol menu
-        cursor: pointer;  # Kursor tangan saat diarahkan
-        width: 100%;  # Lebar penuh
-        transition: all 0.15s ease;  # Animasi transisi halus
+    section[data-testid="stSidebar"] .block-container {
+        padding-top: 1.35rem;
+        padding-bottom: 2rem;
+    }
+    .sb-brand {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding-bottom: 15px;
+        margin-bottom: 15px;
+        border-bottom: 1px solid #eef5f1;
+    }
+    .sb-name {
+        font-size: 1.15rem;
+        font-weight: 800;
+        color: #111827;
+        letter-spacing: -0.02em;
+        line-height: 1.1;
+    }
+    .sb-tag {
+        font-size: 0.73rem;
+        font-weight: 700;
+        color: #00b87c;
+        margin-top: 2px;
+    }
+    .sb-sec {
+        font-size: 0.7rem;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.07em;
+        color: #6b7280;
+        margin-bottom: 8px;
+    }
+
+    section[data-testid="stSidebar"] div[role="radiogroup"] {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+        background: transparent !important;
+        padding: 0 !important;
+        border: none !important;
+        box-shadow: none !important;
+        margin-bottom: 18px;
+        width: 100%;
+    }
+    section[data-testid="stSidebar"] div[role="radiogroup"] > label {
+        background-color: #ffffff !important;
+        border: 1px solid #e5efea !important;
+        border-radius: 10px !important;
+        padding: 10px 13px !important;
+        cursor: pointer;
+        width: 100%;
+        transition: all 0.15s ease;
     }
     section[data-testid="stSidebar"] div[role="radiogroup"] > label,
-    section[data-testid="stSidebar"] div[role="radiogroup"] > label * {  # Teks di dalam menu radio
-        color: #374151 !important;  # Warna teks abu gelap agar jelas
-        font-size: 0.88rem !important;  # Ukuran huruf menu
-        font-weight: 600 !important;  # Ketebalan semi-bold
+    section[data-testid="stSidebar"] div[role="radiogroup"] > label * {
+        color: #374151 !important;
+        font-size: 0.88rem !important;
+        font-weight: 600 !important;
     }
-    section[data-testid="stSidebar"] div[role="radiogroup"] > label:hover {  # Saat kursor mengarah ke menu
-        background-color: #e6f9f2 !important;  # Latar hijau mint lembut
-        border-color: #9ce8ce !important;  # Border hijau lebih tegas
+    section[data-testid="stSidebar"] div[role="radiogroup"] > label:hover {
+        background-color: #e6f9f2 !important;
+        border-color: #9ce8ce !important;
     }
     section[data-testid="stSidebar"] div[role="radiogroup"] > label:hover,
-    section[data-testid="stSidebar"] div[role="radiogroup"] > label:hover * {  # Warna teks saat hover
-        color: #008a5c !important;  # Hijau tua kontras
+    section[data-testid="stSidebar"] div[role="radiogroup"] > label:hover * {
+        color: #008a5c !important;
     }
     section[data-testid="stSidebar"] div[role="radiogroup"] > label[data-checked="true"],
-    section[data-testid="stSidebar"] div[role="radiogroup"] > label:has(input:checked) {  # Menu yang sedang aktif dipilih
-        background-color: #e6f9f2 !important;  # Latar hijau mint aktif
-        border-color: #00b87c !important;  # Border hijau utama
+    section[data-testid="stSidebar"] div[role="radiogroup"] > label:has(input:checked) {
+        background-color: #e6f9f2 !important;
+        border-color: #00b87c !important;
     }
     section[data-testid="stSidebar"] div[role="radiogroup"] > label[data-checked="true"],
     section[data-testid="stSidebar"] div[role="radiogroup"] > label[data-checked="true"] *,
     section[data-testid="stSidebar"] div[role="radiogroup"] > label:has(input:checked),
-    section[data-testid="stSidebar"] div[role="radiogroup"] > label:has(input:checked) * {  # Teks menu yang sedang aktif
-        color: #008a5c !important;  # Warna hijau gelap jelas terbaca
-        font-weight: 800 !important;  # Huruf ekstra tebal
+    section[data-testid="stSidebar"] div[role="radiogroup"] > label:has(input:checked) * {
+        color: #008a5c !important;
+        font-weight: 800 !important;
     }
 
-    .sb-box {  # Kotak ringkasan info dataset & model di sidebar
-        background: #f4fbf8;  # Latar hijau sangat muda
-        border: 1px solid #d4f2e6;  # Border hijau lembut
-        border-radius: 12px;  # Sudut membulat
-        padding: 13px 14px;  # Ruang dalam kotak
-        font-size: 0.78rem;  # Ukuran huruf kecil
-        color: #374151;  # Warna teks
-        line-height: 1.65;  # Jarak antar baris
+    .sb-box {
+        background: #f4fbf8;
+        border: 1px solid #d4f2e6;
+        border-radius: 12px;
+        padding: 13px 14px;
+        font-size: 0.78rem;
+        color: #374151;
+        line-height: 1.65;
     }
-    .sb-box b {  # Teks tebal di dalam kotak info sidebar
-        color: #008a5c;  # Warna hijau kontras
-    }
-
-    .block-container {  # Kontainer utama konten halaman
-        padding-top: 1.3rem;  # Jarak atas
-        padding-bottom: 3rem;  # Jarak bawah
-        max-width: 1180px;  # Batas lebar maksimal konten
+    .sb-box b {
+        color: #008a5c;
     }
 
-    /* Hero banner hijau Bibit */
-    .app-hero {  # Banner judul halaman di bagian atas
-        background: linear-gradient(120deg, #00b87c 0%, #00a36e 60%, #10b981 100%);  # Gradasi hijau segar
-        border-radius: 18px;  # Sudut membulat besar
-        padding: 22px 26px;  # Ruang dalam banner
-        color: #ffffff;  # Warna teks putih
-        display: flex;  # Susunan fleksibel
-        align-items: center;  # Rata tengah vertikal
-        justify-content: space-between;  # Pisahkan kiri dan kanan
-        flex-wrap: wrap;  # Bungkus ke baris baru jika layar sempit
-        gap: 14px;  # Jarak antar elemen
-        margin-bottom: 16px;  # Jarak bawah
-        box-shadow: 0 10px 24px -12px rgba(0, 184, 124, 0.45);  # Bayangan hijau lembut
-    }
-    .app-hero-title {  # Judul utama pada banner
-        font-size: 1.4rem;  # Ukuran huruf judul
-        font-weight: 800;  # Huruf sangat tebal
-        letter-spacing: -0.02em;  # Sedikit rapat antar huruf
-        color: #ffffff;  # Teks putih
-    }
-    .app-hero-sub {  # Deskripsi singkat di bawah judul banner
-        font-size: 0.85rem;  # Ukuran deskripsi
-        color: #e6f9f2;  # Putih kehijauan lembut
-        margin-top: 4px;  # Jarak atas kecil
-    }
-    .hero-pill {  # Badge lokasi di kanan banner
-        background: rgba(255, 255, 255, 0.22);  # Latar putih semi-transparan
-        border: 1px solid rgba(255, 255, 255, 0.38);  # Border putih tipis
-        color: #ffffff;  # Teks putih
-        font-size: 0.78rem;  # Ukuran teks badge
-        font-weight: 700;  # Huruf tebal
-        padding: 7px 14px;  # Ruang dalam badge
-        border-radius: 999px;  # Bentuk kapsul/pill
+    .block-container {
+        padding-top: 1.3rem;
+        padding-bottom: 3rem;
+        max-width: 1180px;
     }
 
-    /* Stat strip */
-    .stat-tile {  # Kartu metrik/statistik ringkas (4 kolom)
-        background: #ffffff;  # Latar putih
-        border: 1px solid #e5efea;  # Border tipis
-        border-radius: 14px;  # Sudut membulat
-        padding: 14px 16px;  # Ruang dalam
-        box-shadow: 0 2px 6px rgba(0, 184, 124, 0.04);  # Bayangan sangat halus
+    .app-hero {
+        background: linear-gradient(120deg, #00b87c 0%, #00a36e 60%, #10b981 100%);
+        border-radius: 18px;
+        padding: 22px 26px;
+        color: #ffffff;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        flex-wrap: wrap;
+        gap: 14px;
+        margin-bottom: 16px;
+        box-shadow: 0 10px 24px -12px rgba(0, 184, 124, 0.45);
     }
-    .stat-k {  # Label metrik (misal: Unit Tersedia)
-        font-size: 0.72rem;  # Ukuran kecil
-        font-weight: 700;  # Tebal
-        text-transform: uppercase;  # Huruf kapital
-        letter-spacing: 0.04em;  # Spasi huruf
-        color: #6b7280;  # Abu-abu
+    .app-hero-title {
+        font-size: 1.4rem;
+        font-weight: 800;
+        letter-spacing: -0.02em;
+        color: #ffffff;
     }
-    .stat-v {  # Nilai utama metrik (misal: Rp 600.000)
-        font-size: 1.25rem;  # Ukuran angka besar
-        font-weight: 800;  # Sangat tebal
-        color: #111827;  # Warna gelap
-        margin-top: 4px;  # Jarak atas
+    .app-hero-sub {
+        font-size: 0.85rem;
+        color: #e6f9f2;
+        margin-top: 4px;
     }
-
-    /* Panel section */
-    .sec-card {  # Kartu panel pembungkus fitur
-        background: #ffffff;  # Latar putih
-        border: 1px solid #e5efea;  # Border tipis
-        border-radius: 16px;  # Sudut membulat
-        padding: 20px 22px;  # Ruang dalam
-        margin-bottom: 16px;  # Jarak bawah
-        box-shadow: 0 2px 8px rgba(17, 24, 39, 0.03);  # Bayangan lembut
-    }
-    .sec-head {  # Judul di dalam kartu panel
-        font-size: 1.02rem;  # Ukuran huruf
-        font-weight: 800;  # Tebal
-        color: #111827;  # Warna gelap
-        margin-bottom: 2px;  # Jarak bawah kecil
-    }
-    .sec-sub {  # Subjudul/keterangan di dalam panel
-        font-size: 0.82rem;  # Ukuran kecil
-        color: #6b7280;  # Abu-abu
-        margin-bottom: 12px;  # Jarak bawah
+    .hero-pill {
+        background: rgba(255, 255, 255, 0.22);
+        border: 1px solid rgba(255, 255, 255, 0.38);
+        color: #ffffff;
+        font-size: 0.78rem;
+        font-weight: 700;
+        padding: 7px 14px;
+        border-radius: 999px;
     }
 
-    /* Kartu listing grid 2 kolom */
-    .prop-card {  # Kartu unit kos di katalog
-        background: #ffffff;  # Latar putih
-        border: 1px solid #e5efea;  # Border tipis
-        border-radius: 16px;  # Sudut membulat
-        overflow: hidden;  # Memotong elemen anak agar sudut atas tetap membulat
-        margin-bottom: 14px;  # Jarak bawah antar kartu
-        transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease;  # Efek transisi
+    .stat-tile {
+        background: #ffffff;
+        border: 1px solid #e5efea;
+        border-radius: 14px;
+        padding: 14px 16px;
+        box-shadow: 0 2px 6px rgba(0, 184, 124, 0.04);
     }
-    .prop-card:hover {  # Efek kartu saat diarahkan kursor
-        transform: translateY(-2px);  # Sedikit terangkat ke atas
-        border-color: #00b87c;  # Border berubah hijau utama
-        box-shadow: 0 10px 20px -12px rgba(0, 184, 124, 0.25);  # Bayangan hijau
+    .stat-k {
+        font-size: 0.72rem;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+        color: #6b7280;
     }
-    .prop-banner {  # Garis aksen hijau di bagian paling atas kartu kos
-        height: 6px;  # Tinggi garis
-        background: linear-gradient(90deg, #00b87c 0%, #34d399 100%);  # Gradasi hijau
-    }
-    .prop-body {  # Isi konten kartu unit kos
-        padding: 16px 18px;  # Ruang dalam
-    }
-    .prop-top {  # Baris atas kartu (nama kos & rating)
-        display: flex;  # Susunan flex
-        justify-content: space-between;  # Pisahkan kiri dan kanan
-        align-items: flex-start;  # Rata atas
-        gap: 10px;  # Jarak antar elemen
-    }
-    .prop-title {  # Nama kos
-        font-size: 1.02rem;  # Ukuran nama kos
-        font-weight: 800;  # Tebal
-        color: #111827;  # Warna gelap
-    }
-    .prop-rating {  # Badge rating bintang
-        font-size: 0.76rem;  # Ukuran kecil
-        font-weight: 700;  # Tebal
-        color: #008a5c;  # Hijau tua
-        background: #e6f9f2;  # Hijau mint muda
-        border: 1px solid #b8f3df;  # Border hijau muda
-        padding: 3px 9px;  # Ruang dalam badge
-        border-radius: 999px;  # Bentuk kapsul
-        white-space: nowrap;  # Teks rating tidak terpotong ke baris baru
-    }
-    .prop-loc {  # Informasi jarak ke kampus
-        font-size: 0.82rem;  # Ukuran teks
-        color: #6b7280;  # Abu-abu
-        margin-top: 4px;  # Jarak atas
-    }
-    .prop-badges {  # Wadah badge fasilitas AC / WiFi
-        margin-top: 10px;  # Jarak atas
-        margin-bottom: 14px;  # Jarak bawah
-    }
-    .p-badge {  # Gaya dasar badge fasilitas
-        display: inline-block;  # Tampil sejajar horizontal
-        font-size: 0.72rem;  # Ukuran kecil
-        font-weight: 700;  # Tebal
-        color: #4b5563;  # Abu gelap
-        background: #f3f4f6;  # Abu muda
-        border: 1px solid #e5e7eb;  # Border abu
-        padding: 3px 10px;  # Ruang dalam
-        border-radius: 999px;  # Bentuk kapsul
-        margin-right: 6px;  # Jarak kanan antar badge
-    }
-    .p-badge.yes {  # Gaya badge jika fasilitas tersedia
-        color: #008a5c;  # Hijau tua
-        background: #e6f9f2;  # Hijau mint
-        border-color: #9ce8ce;  # Border hijau
-    }
-    .prop-foot {  # Bagian bawah kartu kos (harga & tipe kamar)
-        display: flex;  # Susunan flex
-        justify-content: space-between;  # Pisahkan kiri dan kanan
-        align-items: center;  # Rata tengah vertikal
-        padding-top: 12px;  # Jarak atas
-        border-top: 1px solid #f0f5f2;  # Garis pemisah tipis di atas footer kartu
-    }
-    .prop-price {  # Nominal harga sewa bulanan
-        font-size: 1.08rem;  # Ukuran harga
-        font-weight: 800;  # Sangat tebal
-        color: #00b87c;  # Hijau utama Bibit
-    }
-    .prop-price span {  # Label "/ bulan" di sebelah harga
-        font-size: 0.76rem;  # Ukuran lebih kecil
-        font-weight: 500;  # Normal
-        color: #6b7280;  # Abu-abu
-    }
-    .prop-tag-city {  # Label tipe kamar di kanan bawah kartu
-        font-size: 0.72rem;  # Ukuran kecil
-        font-weight: 700;  # Tebal
-        color: #008a5c;  # Hijau tua
-        background: #f4fbf8;  # Hijau sangat muda
-        border: 1px solid #d4f2e6;  # Border hijau muda
-        padding: 3px 9px;  # Ruang dalam
-        border-radius: 999px;  # Bentuk kapsul
+    .stat-v {
+        font-size: 1.25rem;
+        font-weight: 800;
+        color: #111827;
+        margin-top: 4px;
     }
 
-    /* Box estimasi / hasil hijau Bibit */
-    .est-highlight {  # Kotak sorotan hasil prediksi harga atau rekomendasi pakar
-        background: linear-gradient(135deg, #f4fbf8 0%, #e6f9f2 100%);  # Gradasi hijau lembut
-        border: 1.5px solid #00b87c;  # Border hijau utama
-        border-radius: 16px;  # Sudut membulat
-        padding: 22px;  # Ruang dalam
+    .sec-card {
+        background: #ffffff;
+        border: 1px solid #e5efea;
+        border-radius: 16px;
+        padding: 20px 22px;
+        margin-bottom: 16px;
+        box-shadow: 0 2px 8px rgba(17, 24, 39, 0.03);
     }
-    .est-lbl {  # Label kecil di atas hasil prediksi/rekomendasi
-        font-size: 0.74rem;  # Ukuran kecil
-        font-weight: 800;  # Sangat tebal
-        text-transform: uppercase;  # Huruf kapital
-        letter-spacing: 0.05em;  # Spasi huruf
-        color: #008a5c;  # Hijau tua
+    .sec-head {
+        font-size: 1.02rem;
+        font-weight: 800;
+        color: #111827;
+        margin-bottom: 2px;
     }
-    .est-val {  # Angka besar hasil estimasi harga
-        font-size: 2.05rem;  # Ukuran angka besar
-        font-weight: 800;  # Sangat tebal
-        color: #111827;  # Warna gelap
-        margin: 6px 0;  # Jarak atas dan bawah
-    }
-    .est-sub {  # Ringkasan parameter di bawah hasil
-        font-size: 0.84rem;  # Ukuran teks
-        color: #374151;  # Abu gelap
+    .sec-sub {
+        font-size: 0.82rem;
+        color: #6b7280;
+        margin-bottom: 12px;
     }
 
-    .stButton > button {  # Tombol aksi utama Streamlit
-        background-color: #00b87c !important;  # Warna hijau utama
-        color: #ffffff !important;  # Teks putih
-        border: 1px solid #00b87c !important;  # Border hijau
-        border-radius: 10px !important;  # Sudut membulat
-        font-weight: 700 !important;  # Huruf tebal
-        font-size: 0.84rem !important;  # Ukuran huruf tombol
-        padding: 0.5rem 1rem !important;  # Ruang dalam tombol
+    .prop-card {
+        background: #ffffff;
+        border: 1px solid #e5efea;
+        border-radius: 16px;
+        overflow: hidden;
+        margin-bottom: 14px;
+        transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease;
     }
-    .stButton > button:hover {  # Warna tombol saat kursor diarahkan
-        background-color: #009e6a !important;  # Hijau sedikit lebih gelap
-        border-color: #009e6a !important;  # Border menyesuaikan
+    .prop-card:hover {
+        transform: translateY(-2px);
+        border-color: #00b87c;
+        box-shadow: 0 10px 20px -12px rgba(0, 184, 124, 0.25);
     }
-</style>  # Akhir blok gaya CSS
-""", unsafe_allow_html=True)  # Mengizinkan render HTML/CSS di Streamlit
+    .prop-banner {
+        height: 6px;
+        background: linear-gradient(90deg, #00b87c 0%, #34d399 100%);
+    }
+    .prop-body {
+        padding: 16px 18px;
+    }
+    .prop-top {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        gap: 10px;
+    }
+    .prop-title {
+        font-size: 1.02rem;
+        font-weight: 800;
+        color: #111827;
+    }
+    .prop-rating {
+        font-size: 0.76rem;
+        font-weight: 700;
+        color: #008a5c;
+        background: #e6f9f2;
+        border: 1px solid #b8f3df;
+        padding: 3px 9px;
+        border-radius: 999px;
+        white-space: nowrap;
+    }
+    .prop-loc {
+        font-size: 0.82rem;
+        color: #6b7280;
+        margin-top: 4px;
+    }
+    .prop-badges {
+        margin-top: 10px;
+        margin-bottom: 14px;
+    }
+    .p-badge {
+        display: inline-block;
+        font-size: 0.72rem;
+        font-weight: 700;
+        color: #4b5563;
+        background: #f3f4f6;
+        border: 1px solid #e5e7eb;
+        padding: 3px 10px;
+        border-radius: 999px;
+        margin-right: 6px;
+    }
+    .p-badge.yes {
+        color: #008a5c;
+        background: #e6f9f2;
+        border-color: #9ce8ce;
+    }
+    .prop-foot {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding-top: 12px;
+        border-top: 1px solid #f0f5f2;
+    }
+    .prop-price {
+        font-size: 1.08rem;
+        font-weight: 800;
+        color: #00b87c;
+    }
+    .prop-price span {
+        font-size: 0.76rem;
+        font-weight: 500;
+        color: #6b7280;
+    }
+    .prop-tag-city {
+        font-size: 0.72rem;
+        font-weight: 700;
+        color: #008a5c;
+        background: #f4fbf8;
+        border: 1px solid #d4f2e6;
+        padding: 3px 9px;
+        border-radius: 999px;
+    }
+
+    .est-highlight {
+        background: linear-gradient(135deg, #f4fbf8 0%, #e6f9f2 100%);
+        border: 1.5px solid #00b87c;
+        border-radius: 16px;
+        padding: 22px;
+    }
+    .est-lbl {
+        font-size: 0.74rem;
+        font-weight: 800;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        color: #008a5c;
+    }
+    .est-val {
+        font-size: 2.05rem;
+        font-weight: 800;
+        color: #111827;
+        margin: 6px 0;
+    }
+    .est-sub {
+        font-size: 0.84rem;
+        color: #374151;
+    }
+
+    .stButton > button {
+        background-color: #00b87c !important;
+        color: #ffffff !important;
+        border: 1px solid #00b87c !important;
+        border-radius: 10px !important;
+        font-weight: 700 !important;
+        font-size: 0.84rem !important;
+        padding: 0.5rem 1rem !important;
+    }
+    .stButton > button:hover {
+        background-color: #009e6a !important;
+        border-color: #009e6a !important;
+    }
+</style>
+""", unsafe_allow_html=True)
 
 # ==========================================
 # 2. GROQ CLIENT, MODEL & DATA CSV
 # ==========================================
-GROQ_API_KEY = "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"  # API key untuk akses layanan Groq LLM
-client = Groq(api_key=GROQ_API_KEY)  # Membuat objek klien Groq menggunakan API key tersebut
+GROQ_API_KEY = "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"  # API key untuk autentikasi ke layanan Groq
+client = Groq(api_key=GROQ_API_KEY)  # Membuat instance klien Groq untuk memanggil model LLM
 
-def normalize_rupiah(val) -> int:  # Fungsi untuk menormalkan angka harga menjadi satuan rupiah penuh
-    try:  # Blok percobaan konversi angka
-        num = float(val)  # Mengubah nilai input menjadi tipe float
-    except Exception:  # Jika gagal dikonversi ke angka
-        return 0  # Kembalikan 0 sebagai nilai aman
-    if 0 < num < 10000:  # Jika angka tersimpan dalam satuan ribuan (misal 600 berarti 600.000)
-        num = num * 1000  # Kalikan 1000 agar menjadi nominal rupiah penuh
-    return int(round(num))  # Membulatkan dan mengembalikan sebagai bilangan bulat (int)
+def normalize_rupiah(val) -> int:  # Menormalkan angka ribuan (misal 600) menjadi rupiah penuh (600000)
+    try:  # Mencoba mengubah input menjadi angka desimal
+        num = float(val)
+    except Exception:  # Jika gagal dikonversi, kembalikan 0
+        return 0
+    if 0 < num < 10000:  # Jika nilai di bawah 10.000, anggap satuan ribuan dan kalikan 1.000
+        num = num * 1000
+    return int(round(num))  # Membulatkan dan mengembalikan hasil sebagai integer
 
-def format_rp(val) -> str:  # Fungsi untuk memformat angka menjadi format Rupiah Indonesia (contoh: Rp 600.000)
+def format_rp(val) -> str:  # Mengubah angka menjadi format Rupiah dengan pemisah titik (Rp 600.000)
     n = normalize_rupiah(val)  # Menormalkan nilai angka terlebih dahulu
-    return f"Rp {n:,}".replace(",", ".")  # Mengganti pemisah koma ribuan menjadi titik sesuai format Indonesia
+    return f"Rp {n:,}".replace(",", ".")  # Mengganti koma pemisah ribuan menjadi titik
 
-@st.cache_resource  # Cache objek model ML agar tidak dimuat ulang setiap kali halaman di-refresh
-def load_model():  # Fungsi memuat model machine learning dari file model_kos.joblib
-    if os.path.exists("model_kos.joblib"):  # Mengecek apakah file model_kos.joblib tersedia
-        try:  # Mencoba memuat model dengan joblib
-            return joblib.load("model_kos.joblib")  # Mengembalikan objek model yang sudah terlatih
-        except Exception:  # Jika file rusak atau tidak kompatibel
-            return None  # Kembalikan None agar aplikasi memakai formula cadangan
-    return None  # Kembalikan None jika file model belum ada
+@st.cache_resource  # Menyimpan objek model di cache agar tidak dimuat ulang tiap render
+def load_model():  # Memuat model machine learning dari file model_kos.joblib jika tersedia
+    if os.path.exists("model_kos.joblib"):  # Mengecek keberadaan file model_kos.joblib
+        try:  # Mencoba memuat model menggunakan joblib
+            return joblib.load("model_kos.joblib")
+        except Exception:  # Jika model gagal dimuat, kembalikan None agar memakai formula fallback
+            return None
+    return None  # Mengembalikan None jika file model belum ada
 
-@st.cache_data  # Cache hasil pembacaan dataset CSV agar proses lebih cepat
-def load_data():  # Fungsi memuat dan membersihkan data kos dari kos_madiun.csv
-    if not os.path.exists("kos_madiun.csv"):  # Jika file CSV tidak ditemukan
-        return pd.DataFrame({  # Mengembalikan DataFrame contoh bawaan
-            "Nama_Kos": [  # Daftar nama kos contoh
+@st.cache_data  # Menyimpan hasil pembacaan CSV di cache agar akses lebih cepat
+def load_data():  # Memuat, menstandarkan nama kolom, dan membersihkan data dari kos_madiun.csv
+    if not os.path.exists("kos_madiun.csv"):  # Jika file CSV belum ada, pakai data contoh internal
+        return pd.DataFrame({
+            "Nama_Kos": [
                 "Kos Taman Kartoharjo",
                 "Griya Mahasiswa Demangan",
                 "Kos Asri Nambangan Kidul",
                 "Wisma Melati Manguharjo",
                 "Kos Nyaman Mojorejo"
             ],
-            "Jarak_Kampus_km": [0.5, 1.1, 2.3, 1.6, 3.0],  # Jarak ke kampus (km)
-            "Rating": [4.8, 4.5, 4.2, 4.4, 4.0],  # Rating kos
-            "AC": [1, 1, 0, 1, 0],  # Status AC (1 = ada, 0 = tidak ada)
-            "WiFi": [1, 1, 1, 1, 1],  # Status WiFi (1 = ada, 0 = tidak ada)
-            "Harga_Bulanan": [1150000, 950000, 600000, 850000, 520000]  # Harga sewa per bulan
-        }), False  # Mengembalikan False menandakan bukan dari file CSV asli
+            "Jarak_Kampus_km": [0.5, 1.1, 2.3, 1.6, 3.0],
+            "Rating": [4.8, 4.5, 4.2, 4.4, 4.0],
+            "AC": [1, 1, 0, 1, 0],
+            "WiFi": [1, 1, 1, 1, 1],
+            "Harga_Bulanan": [1150000, 950000, 600000, 850000, 520000]
+        }), False
 
-    df = pd.read_csv("kos_madiun.csv")  # Membaca file kos_madiun.csv ke DataFrame pandas
-    df.columns = [str(c).strip() for c in df.columns]  # Membersihkan spasi berlebih di nama kolom
+    df = pd.read_csv("kos_madiun.csv")  # Membaca file kos_madiun.csv ke DataFrame
+    df.columns = [str(c).strip() for c in df.columns]  # Menghapus spasi berlebih pada nama kolom
 
-    rename_map = {}  # Kamus pemetaan nama kolom alternatif ke nama standar
-    lower_cols = {c.lower(): c for c in df.columns}  # Pemetaan nama kolom versi huruf kecil
+    rename_map = {}  # Menyimpan pemetaan nama kolom alternatif ke nama standar
+    lower_cols = {c.lower(): c for c in df.columns}  # Kamus nama kolom versi huruf kecil
 
-    if "Nama_Kos" not in df.columns:  # Jika kolom Nama_Kos belum ada, cari nama alternatifnya
-        for k in ["nama_kos", "nama", "kos", "judul", "name"]:  # Daftar kandidat nama kolom
-            if k in lower_cols:  # Jika cocok
-                rename_map[lower_cols[k]] = "Nama_Kos"  # Petakan ke Nama_Kos
-                break  # Hentikan pencarian untuk kolom ini
+    if "Nama_Kos" not in df.columns:  # Mencari kolom alternatif untuk nama kos
+        for k in ["nama_kos", "nama", "kos", "judul", "name"]:
+            if k in lower_cols:
+                rename_map[lower_cols[k]] = "Nama_Kos"
+                break
 
-    if "Jarak_Kampus_km" not in df.columns:  # Mencari kolom jarak ke kampus jika belum bernama Jarak_Kampus_km
-        for k in ["jarak_kampus_km", "jarak_km", "jarak", "distance"]:  # Kandidat nama kolom jarak
-            if k in lower_cols:  # Jika ditemukan
-                rename_map[lower_cols[k]] = "Jarak_Kampus_km"  # Petakan ke Jarak_Kampus_km
-                break  # Keluar dari loop
+    if "Jarak_Kampus_km" not in df.columns:  # Mencari kolom alternatif untuk jarak ke kampus
+        for k in ["jarak_kampus_km", "jarak_km", "jarak", "distance"]:
+            if k in lower_cols:
+                rename_map[lower_cols[k]] = "Jarak_Kampus_km"
+                break
 
-    if "Rating" not in df.columns:  # Mencari kolom rating jika belum bernama Rating
-        for k in ["rating", "bintang", "score"]:  # Kandidat nama kolom rating
-            if k in lower_cols:  # Jika ditemukan
-                rename_map[lower_cols[k]] = "Rating"  # Petakan ke Rating
-                break  # Keluar dari loop
+    if "Rating" not in df.columns:  # Mencari kolom alternatif untuk rating
+        for k in ["rating", "bintang", "score"]:
+            if k in lower_cols:
+                rename_map[lower_cols[k]] = "Rating"
+                break
 
-    if "AC" not in df.columns:  # Mencari kolom fasilitas AC jika belum bernama AC
-        for k in ["ac", "fasilitas_ac", "has_ac"]:  # Kandidat nama kolom AC
-            if k in lower_cols:  # Jika ditemukan
-                rename_map[lower_cols[k]] = "AC"  # Petakan ke AC
-                break  # Keluar dari loop
+    if "AC" not in df.columns:  # Mencari kolom alternatif untuk fasilitas AC
+        for k in ["ac", "fasilitas_ac", "has_ac"]:
+            if k in lower_cols:
+                rename_map[lower_cols[k]] = "AC"
+                break
 
-    if "WiFi" not in df.columns:  # Mencari kolom fasilitas WiFi jika belum bernama WiFi
-        for k in ["wifi", "wi_fi", "internet", "fasilitas_wifi"]:  # Kandidat nama kolom WiFi
-            if k in lower_cols:  # Jika ditemukan
-                rename_map[lower_cols[k]] = "WiFi"  # Petakan ke WiFi
-                break  # Keluar dari loop
+    if "WiFi" not in df.columns:  # Mencari kolom alternatif untuk fasilitas WiFi
+        for k in ["wifi", "wi_fi", "internet", "fasilitas_wifi"]:
+            if k in lower_cols:
+                rename_map[lower_cols[k]] = "WiFi"
+                break
 
-    if "Harga_Bulanan" not in df.columns:  # Mencari kolom harga sewa bulanan jika belum bernama Harga_Bulanan
-        for k in ["harga_bulanan", "harga", "sewa", "tarif", "price"]:  # Kandidat nama kolom harga
-            if k in lower_cols:  # Jika ditemukan
-                rename_map[lower_cols[k]] = "Harga_Bulanan"  # Petakan ke Harga_Bulanan
-                break  # Keluar dari loop
+    if "Harga_Bulanan" not in df.columns:  # Mencari kolom alternatif untuk harga sewa bulanan
+        for k in ["harga_bulanan", "harga", "sewa", "tarif", "price"]:
+            if k in lower_cols:
+                rename_map[lower_cols[k]] = "Harga_Bulanan"
+                break
 
-    if rename_map:  # Jika ada kolom yang perlu diganti namanya
-        df = df.rename(columns=rename_map)  # Terapkan perubahan nama kolom ke DataFrame
+    if rename_map:  # Menerapkan perubahan nama kolom jika ada yang dipetakan
+        df = df.rename(columns=rename_map)
 
-    for col in ["AC", "WiFi"]:  # Standarisasi nilai kolom fasilitas menjadi 1 (ada) atau 0 (tidak ada)
-        if col in df.columns:  # Pastikan kolom tersedia di DataFrame
-            df[col] = df[col].apply(  # Terapkan fungsi konversi ke setiap baris kolom
-                lambda v: 1 if str(v).strip().lower() in ["1", "true", "ya", "y", "ada", "yes"] else 0  # Nilai 1 jika positif, selain itu 0
+    for col in ["AC", "WiFi"]:  # Menstandarkan nilai fasilitas menjadi 1 (ada) atau 0 (tidak ada)
+        if col in df.columns:
+            df[col] = df[col].apply(
+                lambda v: 1 if str(v).strip().lower() in ["1", "true", "ya", "y", "ada", "yes"] else 0
             )
 
-    if "Harga_Bulanan" in df.columns:  # Membersihkan dan menormalkan kolom harga bulanan
-        df["Harga_Bulanan"] = (  # Ubah menjadi string lalu buang karakter selain angka, titik, dan minus
+    if "Harga_Bulanan" in df.columns:  # Membersihkan karakter non-angka lalu menormalkan harga
+        df["Harga_Bulanan"] = (
             df["Harga_Bulanan"]
             .astype(str)
             .str.replace(r"[^0-9.-]", "", regex=True)
         )
-        df["Harga_Bulanan"] = pd.to_numeric(df["Harga_Bulanan"], errors="coerce").fillna(0)  # Ubah ke numerik, isi NaN dengan 0
-        df["Harga_Bulanan"] = df["Harga_Bulanan"].apply(normalize_rupiah)  # Normalkan angka ribuan menjadi rupiah penuh
+        df["Harga_Bulanan"] = pd.to_numeric(df["Harga_Bulanan"], errors="coerce").fillna(0)
+        df["Harga_Bulanan"] = df["Harga_Bulanan"].apply(normalize_rupiah)
 
-    if "Jarak_Kampus_km" in df.columns:  # Pastikan kolom jarak bertipe numerik
+    if "Jarak_Kampus_km" in df.columns:  # Mengonversi kolom jarak menjadi numerik
         df["Jarak_Kampus_km"] = pd.to_numeric(df["Jarak_Kampus_km"], errors="coerce")
 
-    if "Rating" in df.columns:  # Pastikan kolom rating bertipe numerik
+    if "Rating" in df.columns:  # Mengonversi kolom rating menjadi numerik
         df["Rating"] = pd.to_numeric(df["Rating"], errors="coerce")
 
-    return df, True  # Kembalikan DataFrame bersih dan status True (berhasil memuat CSV)
+    return df, True  # Mengembalikan DataFrame bersih dan status berhasil memuat CSV
 
-model = load_model()  # Memanggil fungsi load_model() saat aplikasi berjalan
-df_kos, csv_loaded = load_data()  # Memanggil fungsi load_data() untuk mendapatkan data kos
+model = load_model()  # Memuat model prediksi harga saat aplikasi berjalan
+df_kos, csv_loaded = load_data()  # Memuat data kos dari CSV
 
 # ==========================================
 # 3. BASIS PENGETAHUAN FAQ + RAG MINI
 # ==========================================
-FAQ_KOS_MADIUN = [  # Daftar pertanyaan & jawaban umum seputar kos di Madiun (basis pengetahuan RAG)
+FAQ_KOS_MADIUN = [  # Daftar topik FAQ kos Madiun sebagai basis pengetahuan retrieval
     {
-        "topik": "Kisaran Harga Bulanan",  # Judul topik FAQ
-        "kunci": ["harga", "sewa", "tarif", "biaya", "bulanan", "murah", "mahal", "budget"],  # Kata kunci pencocokan
-        "jawab": "Kisaran harga kos di Madiun umumnya berada di rentang Rp 500.000-an untuk kamar ekonomis hingga Rp 1.000.000+ per bulan untuk kamar dengan fasilitas lebih lengkap atau lokasi dekat kampus/pusat kota."  # Isi jawaban FAQ
+        "topik": "Kisaran Harga Bulanan",
+        "kunci": ["harga", "sewa", "tarif", "biaya", "bulanan", "murah", "mahal", "budget"],
+        "jawab": "Kisaran harga kos di Madiun umumnya berada di rentang Rp 500.000-an untuk kamar ekonomis hingga Rp 1.000.000+ per bulan untuk kamar dengan fasilitas lebih lengkap atau lokasi dekat kampus/pusat kota."
     },
     {
         "topik": "Pengaruh Jarak ke Kampus",
@@ -528,35 +523,35 @@ FAQ_KOS_MADIUN = [  # Daftar pertanyaan & jawaban umum seputar kos di Madiun (ba
     }
 ]
 
-def ambil_konteks_rag(pertanyaan: str, df: pd.DataFrame, faqs: list) -> str:  # Fungsi mengambil konteks FAQ & data CSV relevan (Retrieval)
-    kata_tanya = set(pertanyaan.lower().replace("?", " ").replace(",", " ").split())  # Memecah pertanyaan menjadi kumpulan kata kunci huruf kecil
-    skor_faq = []  # Menyimpan pasangan (skor_kecocokan, item_faq)
-    for item in faqs:  # Loop setiap topik FAQ
-        cocok = sum(1 for k in item["kunci"] if k in kata_tanya or any(k in w for w in kata_tanya))  # Menghitung jumlah kata kunci yang cocok
-        skor_faq.append((cocok, item))  # Menambahkan skor ke daftar
-    skor_faq.sort(key=lambda x: x[0], reverse=True)  # Mengurutkan dari skor tertinggi ke terendah
-    terpilih = [it for sc, it in skor_faq if sc > 0][:4]  # Mengambil maksimal 4 FAQ paling relevan
-    if not terpilih:  # Jika tidak ada kata kunci yang cocok sama sekali
-        terpilih = faqs[:4]  # Ambil 4 FAQ pertama sebagai konteks bawaan
+def ambil_konteks_rag(pertanyaan: str, df: pd.DataFrame, faqs: list) -> str:  # Mengambil konteks FAQ & data kos yang relevan dengan pertanyaan
+    kata_tanya = set(pertanyaan.lower().replace("?", " ").replace(",", " ").split())  # Memecah pertanyaan jadi kumpulan kata
+    skor_faq = []  # Menyimpan pasangan skor kecocokan dan item FAQ
+    for item in faqs:  # Menghitung kecocokan kata kunci tiap topik FAQ
+        cocok = sum(1 for k in item["kunci"] if k in kata_tanya or any(k in w for w in kata_tanya))
+        skor_faq.append((cocok, item))
+    skor_faq.sort(key=lambda x: x[0], reverse=True)  # Mengurutkan dari kecocokan tertinggi
+    terpilih = [it for sc, it in skor_faq if sc > 0][:4]  # Mengambil maksimal 4 FAQ relevan
+    if not terpilih:  # Jika tidak ada kata kunci yang cocok, pakai 4 FAQ pertama
+        terpilih = faqs[:4]
 
-    teks_faq = "\n".join([f"- [{f['topik']}] {f['jawab']}" for f in terpilih])  # Menyusun teks FAQ terpilih
+    teks_faq = "\n".join([f"- [{f['topik']}] {f['jawab']}" for f in terpilih])  # Menyusun teks konteks FAQ
 
-    ringkasan_csv = []  # Menyimpan ringkasan beberapa unit kos dari CSV
-    if df is not None and len(df) > 0:  # Jika DataFrame tidak kosong
-        for _, r in df.head(8).iterrows():  # Ambil maksimal 8 baris pertama agar konteks tetap ringkas
-            nm = r.get("Nama_Kos", "-")  # Nama kos
-            hrg = format_rp(r.get("Harga_Bulanan", 0))  # Harga terformat Rupiah
-            jrk = r.get("Jarak_Kampus_km", "-")  # Jarak ke kampus
-            rtg = r.get("Rating", "-")  # Rating kos
-            ringkasan_csv.append(f"- {nm}: {hrg}/bln, jarak {jrk} km, rating {rtg}")  # Format baris ringkasan
-    teks_csv = "\n".join(ringkasan_csv) if ringkasan_csv else "- Tidak ada data CSV."  # Gabungkan ringkasan CSV
+    ringkasan_csv = []  # Menyusun ringkasan data unit kos dari CSV
+    if df is not None and len(df) > 0:
+        for _, r in df.head(8).iterrows():
+            nm = r.get("Nama_Kos", "-")
+            hrg = format_rp(r.get("Harga_Bulanan", 0))
+            jrk = r.get("Jarak_Kampus_km", "-")
+            rtg = r.get("Rating", "-")
+            ringkasan_csv.append(f"- {nm}: {hrg}/bln, jarak {jrk} km, rating {rtg}")
+    teks_csv = "\n".join(ringkasan_csv) if ringkasan_csv else "- Tidak ada data CSV."
 
-    return f"FAQ TERKAIT:\n{teks_faq}\n\nDATA KOS TERDATA:\n{teks_csv}"  # Mengembalikan gabungan konteks FAQ dan data kos
+    return f"FAQ TERKAIT:\n{teks_faq}\n\nDATA KOS TERDATA:\n{teks_csv}"  # Mengembalikan gabungan konteks untuk prompt LLM
 
 # ==========================================
 # 4. SISTEM PAKAR ATURAN BERANTAI
 # ==========================================
-ATURAN_PAKAR = [  # Basis aturan IF-THEN (jika-maka) untuk sistem pakar forward chaining
+ATURAN_PAKAR = [  # Basis aturan JIKA-MAKA untuk penalaran forward chaining
     {"jika": ["budget ketat", "prioritas hemat"], "maka": "profil hemat"},
     {"jika": ["dekat kampus", "prioritas lokasi"], "maka": "profil komuter kampus"},
     {"jika": ["butuh ac", "butuh wifi"], "maka": "kebutuhan fasilitas lengkap"},
@@ -570,35 +565,35 @@ ATURAN_PAKAR = [  # Basis aturan IF-THEN (jika-maka) untuk sistem pakar forward 
     {"jika": ["cocok kos eksklusif"], "maka": "REKOMENDASI: Pilih kos berfasilitas AC + WiFi dengan rating tinggi dan keamanan memadai."}
 ]
 
-def forward_chaining_kos(aturan: list, fakta_awal: list):  # Mesin inferensi forward chaining (dari fakta menuju kesimpulan)
-    fakta = list(fakta_awal)  # Menyalin daftar fakta awal agar tidak mengubah list asli secara langsung
-    jejak = []  # Menyimpan urutan aturan yang berhasil terpicu
-    ada_baru = True  # Penanda apakah ada fakta baru yang dihasilkan pada iterasi terakhir
-    while ada_baru:  # Ulangi selama masih ada fakta baru yang bisa disimpulkan
-        ada_baru = False  # Reset penanda sebelum memeriksa semua aturan
-        for r in aturan:  # Periksa setiap aturan satu per satu
-            terpenuhi = all(k in fakta for k in r["jika"])  # Cek apakah semua syarat pada "jika" ada di daftar fakta
-            if terpenuhi and r["maka"] not in fakta:  # Jika terpenuhi dan kesimpulannya belum ada di fakta
-                fakta.append(r["maka"])  # Tambahkan kesimpulan ke daftar fakta baru
-                jejak.append((r["jika"], r["maka"]))  # Catat jejak aturan yang aktif
-                ada_baru = True  # Tandai bahwa ada fakta baru sehingga perlu cek ulang
-    rekomendasi = [f for f in fakta if f.startswith("REKOMENDASI:")]  # Filter hanya kesimpulan akhir yang diawali REKOMENDASI:
-    if not rekomendasi:  # Jika belum ada rekomendasi spesifik yang muncul
-        rekomendasi = ["REKOMENDASI: Kombinasikan jarak ke kampus, fasilitas wajib, dan anggaran bulanan saat survei lokasi."]  # Saran umum
-    return fakta, jejak, rekomendasi  # Kembalikan semua fakta, jejak aturan, dan rekomendasi akhir
+def forward_chaining_kos(aturan: list, fakta_awal: list):  # Menjalankan inferensi maju dari fakta awal hingga menghasilkan rekomendasi
+    fakta = list(fakta_awal)  # Menyalin daftar fakta awal
+    jejak = []  # Menyimpan urutan aturan yang terpicu
+    ada_baru = True  # Penanda iterasi selama masih ada kesimpulan baru
+    while ada_baru:
+        ada_baru = False
+        for r in aturan:
+            terpenuhi = all(k in fakta for k in r["jika"])  # Cek apakah semua premis pada "jika" terpenuhi
+            if terpenuhi and r["maka"] not in fakta:  # Jika terpenuhi dan belum tercatat di fakta
+                fakta.append(r["maka"])  # Tambahkan kesimpulan baru ke daftar fakta
+                jejak.append((r["jika"], r["maka"]))  # Simpan jejak aturan
+                ada_baru = True
+    rekomendasi = [f for f in fakta if f.startswith("REKOMENDASI:")]  # Ambil kesimpulan akhir rekomendasi
+    if not rekomendasi:  # Saran cadangan jika belum ada aturan akhir yang cocok
+        rekomendasi = ["REKOMENDASI: Kombinasikan jarak ke kampus, fasilitas wajib, dan anggaran bulanan saat survei lokasi."]
+    return fakta, jejak, rekomendasi
 
 # ==========================================
 # 5. SIDEBAR & HERO HEADER
 # ==========================================
-MENU_KOS = {  # Kamus daftar menu halaman beserta judul dan deskripsi banner-nya
+MENU_KOS = {  # Daftar menu navigasi beserta judul dan deskripsi halaman
     "Katalog Kos": ("Temukan Kos di Madiun", "Jelajahi unit kos, saring fasilitas AC/WiFi, dan bandingkan harga sewa bulanan."),
     "Prediksi Harga": ("Kalkulator Harga Kos", "Perkirakan tarif sewa bulanan berdasarkan jarak kampus, rating, dan fasilitas."),
     "Asisten FAQ & RAG": ("Asisten Info Kos", "Tanya jawab seputar aturan sewa, survei kamar, dan data kos Madiun."),
     "Rekomendasi Pakar": ("Rekomendasi Sistem Pakar", "Cocokkan anggaran dan kebutuhanmu lewat aturan penalaran berantai.")
 }
 
-with st.sidebar:  # Memulai blok elemen di sidebar kiri
-    st.markdown(  # Menampilkan logo dan nama brand di sidebar
+with st.sidebar:  # Menyusun elemen navigasi dan informasi di sidebar kiri
+    st.markdown(
         '<div class="sb-brand">'
         + BRAND_SVG
         + '<div>'
@@ -608,16 +603,16 @@ with st.sidebar:  # Memulai blok elemen di sidebar kiri
         '</div>',
         unsafe_allow_html=True
     )
-    st.markdown('<div class="sb-sec">Menu Utama</div>', unsafe_allow_html=True)  # Label bagian menu
-    selected_tab = st.radio(  # Komponen radio navigasi antar halaman
+    st.markdown('<div class="sb-sec">Menu Utama</div>', unsafe_allow_html=True)
+    selected_tab = st.radio(  # Memilih halaman fitur yang sedang dibuka
         "Menu Utama",
-        list(MENU_KOS.keys()),  # Pilihan menu diambil dari kunci MENU_KOS
-        label_visibility="collapsed"  # Sembunyikan label bawaan radio karena sudah ada judul di atasnya
+        list(MENU_KOS.keys()),
+        label_visibility="collapsed"
     )
 
-    sumber_info = "kos_madiun.csv" if csv_loaded else "Data Contoh"  # Menentukan teks sumber data aktif
-    model_info = "Model ML Aktif" if model is not None else "Estimasi Tarif"  # Menentukan teks status model prediksi
-    st.markdown(  # Menampilkan kotak status ringkas di bawah menu sidebar
+    sumber_info = "kos_madiun.csv" if csv_loaded else "Data Contoh"  # Label status sumber data
+    model_info = "Model ML Aktif" if model is not None else "Estimasi Tarif"  # Label status model prediksi
+    st.markdown(
         f'<div class="sb-box">'
         f'<div><b>Wilayah:</b> Kota Madiun</div>'
         f'<div><b>Dataset:</b> {sumber_info} ({len(df_kos)} unit)</div>'
@@ -626,8 +621,8 @@ with st.sidebar:  # Memulai blok elemen di sidebar kiri
         unsafe_allow_html=True
     )
 
-hero_title, hero_sub = MENU_KOS[selected_tab]  # Mengambil judul dan subjudul sesuai menu yang sedang dipilih
-st.markdown(  # Menampilkan banner hero hijau di bagian atas konten utama
+hero_title, hero_sub = MENU_KOS[selected_tab]  # Mengambil judul dan subjudul sesuai menu aktif
+st.markdown(
     f'<div class="app-hero">'
     f'<div>'
     f'<div class="app-hero-title">{hero_title}</div>'
@@ -638,69 +633,69 @@ st.markdown(  # Menampilkan banner hero hijau di bagian atas konten utama
     unsafe_allow_html=True
 )
 
-if not csv_loaded:  # Memberi informasi jika file CSV belum terbaca
+if not csv_loaded:  # Memberi tahu pengguna jika sedang memakai data contoh
     st.info("Berkas `kos_madiun.csv` belum ditemukan di folder proyek; menampilkan data contoh.")
 
-# Menghitung nilai statistik ringkas (rata-rata, termurah, tertinggi) dari kolom Harga_Bulanan
+# Menghitung statistik ringkas (rata-rata, terendah, tertinggi) dari harga bulanan kos
 avg_p = format_rp(df_kos["Harga_Bulanan"].mean()) if "Harga_Bulanan" in df_kos.columns and len(df_kos) > 0 else "Rp 800.000"
 min_p = format_rp(df_kos["Harga_Bulanan"].min()) if "Harga_Bulanan" in df_kos.columns and len(df_kos) > 0 else "Rp 500.000"
 max_p = format_rp(df_kos["Harga_Bulanan"].max()) if "Harga_Bulanan" in df_kos.columns and len(df_kos) > 0 else "Rp 1.200.000"
 
-m1, m2, m3, m4 = st.columns(4)  # Membagi baris metrik menjadi 4 kolom sejajar
-m1.markdown(f'<div class="stat-tile"><div class="stat-k">Unit Tersedia</div><div class="stat-v">{len(df_kos)} Kos</div></div>', unsafe_allow_html=True)  # Kolom 1: jumlah unit kos
-m2.markdown(f'<div class="stat-tile"><div class="stat-k">Rata-rata / Bulan</div><div class="stat-v">{avg_p}</div></div>', unsafe_allow_html=True)  # Kolom 2: rata-rata harga
-m3.markdown(f'<div class="stat-tile"><div class="stat-k">Mulai Dari</div><div class="stat-v">{min_p}</div></div>', unsafe_allow_html=True)  # Kolom 3: harga terendah
-m4.markdown(f'<div class="stat-tile"><div class="stat-k">Tertinggi / Bulan</div><div class="stat-v">{max_p}</div></div>', unsafe_allow_html=True)  # Kolom 4: harga tertinggi
+m1, m2, m3, m4 = st.columns(4)  # Menampilkan 4 kartu statistik sejajar
+m1.markdown(f'<div class="stat-tile"><div class="stat-k">Unit Tersedia</div><div class="stat-v">{len(df_kos)} Kos</div></div>', unsafe_allow_html=True)
+m2.markdown(f'<div class="stat-tile"><div class="stat-k">Rata-rata / Bulan</div><div class="stat-v">{avg_p}</div></div>', unsafe_allow_html=True)
+m3.markdown(f'<div class="stat-tile"><div class="stat-k">Mulai Dari</div><div class="stat-v">{min_p}</div></div>', unsafe_allow_html=True)
+m4.markdown(f'<div class="stat-tile"><div class="stat-k">Tertinggi / Bulan</div><div class="stat-v">{max_p}</div></div>', unsafe_allow_html=True)
 
-st.markdown("<div style='height:16px'></div>", unsafe_allow_html=True)  # Memberi jarak vertikal sebelum konten halaman
+st.markdown("<div style='height:16px'></div>", unsafe_allow_html=True)
 
 # ==========================================
 # 6. KATALOG KOS (GRID 2 KOLOM + FILTER)
 # ==========================================
-if selected_tab == "Katalog Kos":  # Jika pengguna memilih menu Katalog Kos
-    f1, f2, f3 = st.columns([2.2, 1, 1])  # Membagi area filter menjadi 3 kolom dengan lebar proporsional
-    with f1:  # Kolom 1: input pencarian nama kos
+if selected_tab == "Katalog Kos":  # Logika fitur Katalog Kos
+    f1, f2, f3 = st.columns([2.2, 1, 1])  # Kolom pencarian nama dan filter AC/WiFi
+    with f1:
         cari_nama = st.text_input("Cari nama kos", placeholder="Misal: Melati, Mawar, Kartoharjo...")
-    with f2:  # Kolom 2: dropdown filter fasilitas AC
+    with f2:
         filter_ac = st.selectbox("Fasilitas AC", ["Semua", "Ada AC", "Non-AC"])
-    with f3:  # Kolom 3: dropdown filter fasilitas WiFi
+    with f3:
         filter_wifi = st.selectbox("Fasilitas WiFi", ["Semua", "Ada WiFi"])
 
-    df_tampil = df_kos.copy()  # Salin DataFrame utama agar data asli tidak berubah
-    if cari_nama and "Nama_Kos" in df_tampil.columns:  # Filter berdasarkan teks pencarian nama kos
+    df_tampil = df_kos.copy()  # Menyaring DataFrame berdasarkan filter aktif
+    if cari_nama and "Nama_Kos" in df_tampil.columns:
         df_tampil = df_tampil[df_tampil["Nama_Kos"].astype(str).str.contains(cari_nama, case=False, na=False)]
-    if filter_ac == "Ada AC" and "AC" in df_tampil.columns:  # Filter hanya kos yang memiliki AC
+    if filter_ac == "Ada AC" and "AC" in df_tampil.columns:
         df_tampil = df_tampil[df_tampil["AC"] == 1]
-    elif filter_ac == "Non-AC" and "AC" in df_tampil.columns:  # Filter hanya kos tanpa AC
+    elif filter_ac == "Non-AC" and "AC" in df_tampil.columns:
         df_tampil = df_tampil[df_tampil["AC"] == 0]
-    if filter_wifi == "Ada WiFi" and "WiFi" in df_tampil.columns:  # Filter hanya kos yang memiliki WiFi
+    if filter_wifi == "Ada WiFi" and "WiFi" in df_tampil.columns:
         df_tampil = df_tampil[df_tampil["WiFi"] == 1]
 
-    st.markdown(f"<div style='font-weight:700; color:#008a5c; margin:6px 0 10px 0;'>Menampilkan {len(df_tampil)} unit kos</div>", unsafe_allow_html=True)  # Info jumlah unit hasil filter
+    st.markdown(f"<div style='font-weight:700; color:#008a5c; margin:6px 0 10px 0;'>Menampilkan {len(df_tampil)} unit kos</div>", unsafe_allow_html=True)
 
-    if len(df_tampil) == 0:  # Jika tidak ada data yang cocok dengan filter
+    if len(df_tampil) == 0:  # Pesan jika hasil filter kosong
         st.warning("Tidak ada unit kos yang sesuai dengan filter.")
-    else:  # Jika ada unit kos yang ditampilkan
-        rows_list = list(df_tampil.iterrows())  # Mengubah baris DataFrame menjadi list agar mudah dipasangkan per 2 kartu
-        for idx in range(0, len(rows_list), 2):  # Loop melompat 2 baris setiap iterasi untuk grid 2 kolom
-            cols = st.columns(2, gap="medium")  # Membuat 2 kolom sejajar
-            for c_idx in range(2):  # Mengisi kolom kiri (0) dan kolom kanan (1)
-                if idx + c_idx < len(rows_list):  # Pastikan indeks tidak melebihi jumlah data
-                    _, row = rows_list[idx + c_idx]  # Mengambil data satu unit kos
-                    nama = row.get("Nama_Kos", "Kos Madiun")  # Nama kos
-                    harga_str = format_rp(row.get("Harga_Bulanan", 0))  # Harga terformat Rupiah
-                    jarak_k = row.get("Jarak_Kampus_km", "-")  # Jarak ke kampus
-                    rating_k = row.get("Rating", "-")  # Rating kos
-                    ada_ac = row.get("AC", 0) == 1  # Boolean status AC
-                    ada_wifi = row.get("WiFi", 0) == 1  # Boolean status WiFi
+    else:  # Menampilkan daftar kos dalam grid 2 kolom
+        rows_list = list(df_tampil.iterrows())
+        for idx in range(0, len(rows_list), 2):
+            cols = st.columns(2, gap="medium")
+            for c_idx in range(2):
+                if idx + c_idx < len(rows_list):
+                    _, row = rows_list[idx + c_idx]
+                    nama = row.get("Nama_Kos", "Kos Madiun")
+                    harga_str = format_rp(row.get("Harga_Bulanan", 0))
+                    jarak_k = row.get("Jarak_Kampus_km", "-")
+                    rating_k = row.get("Rating", "-")
+                    ada_ac = row.get("AC", 0) == 1
+                    ada_wifi = row.get("WiFi", 0) == 1
 
-                    ac_cls = "p-badge yes" if ada_ac else "p-badge"  # Kelas badge AC
-                    wifi_cls = "p-badge yes" if ada_wifi else "p-badge"  # Kelas badge WiFi
-                    ac_lbl = "✓ AC" if ada_ac else "Non-AC"  # Label teks AC
-                    wifi_lbl = "✓ WiFi" if ada_wifi else "Tanpa WiFi"  # Label teks WiFi
-                    tipe_kamar = "Kamar AC" if ada_ac else "Kamar Hemat"  # Label tipe kamar di pojok kanan bawah
+                    ac_cls = "p-badge yes" if ada_ac else "p-badge"
+                    wifi_cls = "p-badge yes" if ada_wifi else "p-badge"
+                    ac_lbl = "✓ AC" if ada_ac else "Non-AC"
+                    wifi_lbl = "✓ WiFi" if ada_wifi else "Tanpa WiFi"
+                    tipe_kamar = "Kamar AC" if ada_ac else "Kamar Hemat"
 
-                    card_html = (  # Menyusun HTML kartu unit kos
+                    card_html = (
                         '<div class="prop-card">'
                         '<div class="prop-banner"></div>'
                         '<div class="prop-body">'
@@ -717,166 +712,166 @@ if selected_tab == "Katalog Kos":  # Jika pengguna memilih menu Katalog Kos
                         '</div>'
                         '</div>'
                     )
-                    cols[c_idx].markdown(card_html, unsafe_allow_html=True)  # Render kartu di kolom yang sesuai
+                    cols[c_idx].markdown(card_html, unsafe_allow_html=True)
 
 # ==========================================
 # 7. PREDIKSI HARGA + GRAFIK
 # ==========================================
-elif selected_tab == "Prediksi Harga":  # Jika pengguna memilih menu Prediksi Harga
-    col_l, col_r = st.columns([1.05, 1], gap="large")  # Membagi halaman menjadi 2 kolom: input (kiri) dan hasil (kanan)
-    with col_l:  # Kolom kiri: pengaturan input fitur kos
+elif selected_tab == "Prediksi Harga":  # Logika fitur Prediksi Harga & grafik tarif
+    col_l, col_r = st.columns([1.05, 1], gap="large")
+    with col_l:  # Panel input parameter kamar
         st.markdown('<div class="sec-card"><div class="sec-head">Kriteria Kamar</div><div class="sec-sub">Atur jarak kampus, rating, dan fasilitas kamar.</div>', unsafe_allow_html=True)
-        jarak = st.slider("Jarak ke kampus (km)", 0.1, 10.0, 1.2, 0.1)  # Slider input jarak kampus
-        rating = st.slider("Rating kos", 1.0, 5.0, 4.5, 0.1)  # Slider input rating kos
-        c_a, c_b = st.columns(2)  # Membagi toggle fasilitas menjadi 2 kolom
-        with c_a:  # Toggle fasilitas AC
+        jarak = st.slider("Jarak ke kampus (km)", 0.1, 10.0, 1.2, 0.1)
+        rating = st.slider("Rating kos", 1.0, 5.0, 4.5, 0.1)
+        c_a, c_b = st.columns(2)
+        with c_a:
             punya_ac = st.toggle("Kamar AC", value=True)
-        with c_b:  # Toggle fasilitas WiFi
+        with c_b:
             punya_wifi = st.toggle("WiFi", value=True)
-        st.button("Hitung Estimasi")  # Tombol pemicu hitung ulang/interaksi
+        st.button("Hitung Estimasi")
         st.markdown('</div>', unsafe_allow_html=True)
 
-    with col_r:  # Kolom kanan: menampilkan hasil prediksi harga bulanan
+    with col_r:  # Panel hasil prediksi harga sewa bulanan
         st.markdown('<div class="sec-card"><div class="sec-head">Estimasi Sewa Bulanan</div><div class="sec-sub">Perkiraan harga kos berdasarkan model atau data.</div>', unsafe_allow_html=True)
-        ac_v = 1 if punya_ac else 0  # Konversi toggle AC ke angka 1 atau 0
-        wifi_v = 1 if punya_wifi else 0  # Konversi toggle WiFi ke angka 1 atau 0
-        est = None  # Variabel penampung hasil prediksi
-        if model is not None:  # Jika model ML (.joblib) tersedia
-            try:  # Melakukan prediksi menggunakan model ML
-                fitur = pd.DataFrame([[jarak, rating, ac_v, wifi_v]], columns=["Jarak_Kampus_km", "Rating", "AC", "WiFi"])  # Menyiapkan DataFrame fitur sesuai urutan training
-                est = float(model.predict(fitur)[0])  # Mengambil nilai prediksi pertama
-            except Exception:  # Jika terjadi error saat prediksi model
-                est = None  # Set None agar masuk ke formula cadangan
-        if est is None:  # Formula cadangan jika model tidak tersedia atau gagal dipanggil
+        ac_v = 1 if punya_ac else 0
+        wifi_v = 1 if punya_wifi else 0
+        est = None
+        if model is not None:  # Menggunakan model ML jika berhasil dimuat
+            try:
+                fitur = pd.DataFrame([[jarak, rating, ac_v, wifi_v]], columns=["Jarak_Kampus_km", "Rating", "AC", "WiFi"])
+                est = float(model.predict(fitur)[0])
+            except Exception:
+                est = None
+        if est is None:  # Formula cadangan jika model tidak tersedia
             est = max(350000, 550000 + (rating * 110000) - (jarak * 45000) + (ac_v * 320000) + (wifi_v * 90000))
 
-        est_rp = format_rp(est)  # Format hasil estimasi menjadi Rupiah
-        box_est = (  # Menyusun kartu hasil estimasi harga
+        est_rp = format_rp(est)
+        box_est = (
             '<div class="est-highlight">'
             '<div class="est-lbl">Perkiraan Biaya Kos / Bulan</div>'
             f'<div class="est-val">{est_rp}</div>'
             f'<div class="est-sub">Jarak {jarak:.1f} km · Rating {rating:.1f} · {"AC" if punya_ac else "Non-AC"} · {"WiFi" if punya_wifi else "Tanpa WiFi"}</div>'
             '</div>'
         )
-        st.markdown(box_est, unsafe_allow_html=True)  # Menampilkan kotak hasil prediksi
+        st.markdown(box_est, unsafe_allow_html=True)
         st.markdown('</div>', unsafe_allow_html=True)
 
-    if "Harga_Bulanan" in df_kos.columns and "Nama_Kos" in df_kos.columns:  # Menampilkan grafik batang perbandingan harga kos
+    if "Harga_Bulanan" in df_kos.columns and "Nama_Kos" in df_kos.columns:  # Grafik perbandingan tarif kos
         st.markdown('<div class="sec-card"><div class="sec-head">Grafik Tarif Unit Kos</div><div class="sec-sub">Perbandingan harga bulanan pada kos_madiun.csv.</div>', unsafe_allow_html=True)
-        st.bar_chart(df_kos.set_index("Nama_Kos")[["Harga_Bulanan"]], color="#00b87c")  # Render bar chart berwarna hijau Bibit
+        st.bar_chart(df_kos.set_index("Nama_Kos")[["Harga_Bulanan"]], color="#00b87c")
         st.markdown('</div>', unsafe_allow_html=True)
 
 # ==========================================
 # 8. ASISTEN FAQ & RAG
 # ==========================================
-elif selected_tab == "Asisten FAQ & RAG":  # Jika pengguna memilih menu Asisten FAQ & RAG
+elif selected_tab == "Asisten FAQ & RAG":  # Logika fitur Asisten FAQ & RAG berbasis Groq
     st.markdown('<div class="sec-card"><div class="sec-head">Asisten Tanya Jawab Kos Madiun</div><div class="sec-sub">Menjawab pertanyaan berdasarkan FAQ kos dan data kos_madiun.csv.</div>', unsafe_allow_html=True)
 
-    with st.expander(f"Daftar FAQ Acuan ({len(FAQ_KOS_MADIUN)} topik)"):  # Panel lipat untuk melihat seluruh daftar FAQ acuan
-        for idx, item in enumerate(FAQ_KOS_MADIUN, start=1):  # Menampilkan tiap topik FAQ bernomor
+    with st.expander(f"Daftar FAQ Acuan ({len(FAQ_KOS_MADIUN)} topik)"):  # Menampilkan daftar FAQ yang dijadikan acuan
+        for idx, item in enumerate(FAQ_KOS_MADIUN, start=1):
             st.markdown(f"**{idx}. {item['topik']}** — {item['jawab']}")
 
-    if "app_kos_chat" not in st.session_state:  # Inisialisasi riwayat chat di session_state jika belum ada
+    if "app_kos_chat" not in st.session_state:  # Menginisialisasi riwayat chat di session_state
         st.session_state.app_kos_chat = [
             {"role": "assistant", "content": "Halo! Ada yang ingin kamu tanyakan soal harga kos, tips survei kamar, fasilitas AC/WiFi, atau pilihan kos di Madiun?"}
         ]
 
-    b1, b2, b3, b4 = st.columns([1.2, 1.2, 1.2, 0.7])  # Baris tombol pertanyaan cepat & reset percakapan
-    prompt_click = None  # Menampung pertanyaan jika tombol cepat diklik
-    if b1.button("Kisaran harga kos"):  # Tombol cepat 1
+    b1, b2, b3, b4 = st.columns([1.2, 1.2, 1.2, 0.7])  # Tombol pertanyaan cepat dan reset obrolan
+    prompt_click = None
+    if b1.button("Kisaran harga kos"):
         prompt_click = "Bagaimana kisaran harga kos di Madiun dan pengaruh jarak ke kampus?"
-    if b2.button("Checklist survei"):  # Tombol cepat 2
+    if b2.button("Checklist survei"):
         prompt_click = "Apa saja yang perlu dicek saat survei kamar kos sebelum bayar DP?"
-    if b3.button("AC & listrik bulanan"):  # Tombol cepat 3
+    if b3.button("AC & listrik bulanan"):
         prompt_click = "Apa pertimbangan memilih kamar AC dan biaya listrik bulanan?"
-    if b4.button("Reset"):  # Tombol reset riwayat obrolan
+    if b4.button("Reset"):
         st.session_state.app_kos_chat = [
             {"role": "assistant", "content": "Percakapan direset. Silakan tanya lagi."}
         ]
-        st.rerun()  # Memuat ulang halaman agar chat langsung kosong/ter-reset
+        st.rerun()
 
-    for m in st.session_state.app_kos_chat:  # Menampilkan seluruh riwayat pesan chat
-        with st.chat_message(m["role"]):  # Bubble chat sesuai peran (user / assistant)
+    for m in st.session_state.app_kos_chat:  # Merender seluruh riwayat pesan chat
+        with st.chat_message(m["role"]):
             st.markdown(m["content"])
 
-    ketikan = st.chat_input("Tanya seputar kos Madiun...")  # Kotak input teks chat di bagian bawah
-    pesan = prompt_click or ketikan  # Memilih pesan dari klik tombol cepat atau ketikan user
+    ketikan = st.chat_input("Tanya seputar kos Madiun...")  # Input pertanyaan dari pengguna
+    pesan = prompt_click or ketikan
 
-    if pesan:  # Jika ada pertanyaan baru yang dikirim
-        st.session_state.app_kos_chat.append({"role": "user", "content": pesan})  # Simpan pesan user ke riwayat
-        with st.chat_message("user"):  # Tampilkan pesan user
+    if pesan:  # Mengirim konteks RAG + pertanyaan ke model Groq
+        st.session_state.app_kos_chat.append({"role": "user", "content": pesan})
+        with st.chat_message("user"):
             st.markdown(pesan)
 
-        konteks_rag = ambil_konteks_rag(pesan, df_kos, FAQ_KOS_MADIUN)  # Ambil konteks FAQ & data CSV terkait pertanyaan
+        konteks_rag = ambil_konteks_rag(pesan, df_kos, FAQ_KOS_MADIUN)
 
-        with st.chat_message("assistant"):  # Bubble balasan dari asisten AI
-            with st.spinner("Menyusun jawaban..."):  # Indikator loading saat menunggu respons LLM
-                balasan = None  # Variabel hasil jawaban LLM
-                err_terakhir = None  # Variabel penyimpan error jika pemanggilan gagal
+        with st.chat_message("assistant"):
+            with st.spinner("Menyusun jawaban..."):
+                balasan = None
+                err_terakhir = None
 
-                daftar_model = []  # Daftar kandidat model Groq yang tersedia
-                try:  # Mengambil daftar model aktif dari akun Groq
-                    for item in client.models.list().data:  # Loop setiap model yang dikembalikan API
-                        mid = getattr(item, "id", "")  # Ambil ID model
-                        if mid and not any(k in mid.lower() for k in ["whisper", "guard", "tts", "embed"]):  # Kecualikan model non-chat/audio/embedding
-                            daftar_model.append(mid)  # Tambahkan ke daftar model chat
-                except Exception as e:  # Jika gagal mengambil daftar model
+                daftar_model = []  # Menyusun daftar kandidat model chat Groq
+                try:
+                    for item in client.models.list().data:
+                        mid = getattr(item, "id", "")
+                        if mid and not any(k in mid.lower() for k in ["whisper", "guard", "tts", "embed"]):
+                            daftar_model.append(mid)
+                except Exception as e:
                     err_terakhir = e
 
-                for cadangan in ["llama-3.3-70b-versatile", "llama-3.1-8b-instant"]:  # Menambahkan model cadangan jika belum ada di daftar
+                for cadangan in ["llama-3.3-70b-versatile", "llama-3.1-8b-instant"]:  # Model fallback cadangan
                     if cadangan not in daftar_model:
                         daftar_model.append(cadangan)
 
-                system_prompt = (  # Instruksi sistem (persona & aturan grounding RAG) untuk LLM
+                system_prompt = (
                     "Kamu adalah asisten informasi kos Madiun. Jawab dalam bahasa Indonesia yang jelas, ramah, dan ringkas. "
                     "Utamakan informasi dari KONTEKS di bawah ini. Jika di luar konteks, katakan secara jujur bahwa informasi tersebut belum tercantum di data/FAQ."
                 )
 
-                for nama_m in daftar_model[:6]:  # Mencoba memanggil maksimal 6 model secara berurutan (fallback)
-                    try:  # Request chat completion ke Groq
+                for nama_m in daftar_model[:6]:  # Mencoba model secara berurutan sampai berhasil
+                    try:
                         hasil = client.chat.completions.create(
-                            model=nama_m,  # Nama model yang dicoba
-                            messages=[  # Pesan sistem + konteks RAG + pertanyaan pengguna
+                            model=nama_m,
+                            messages=[
                                 {"role": "system", "content": system_prompt},
                                 {"role": "user", "content": f"KONTEKS:\n{konteks_rag}\n\nPERTANYAAN:\n{pesan}"}
                             ],
-                            temperature=0.4,  # Kreativitas terukur agar jawaban tetap fokus pada konteks
-                            max_tokens=550  # Batas panjang maksimum jawaban
+                            temperature=0.4,
+                            max_tokens=550
                         )
-                        balasan = hasil.choices[0].message.content  # Ambil teks jawaban dari respons API
-                        break  # Keluar dari loop jika sudah berhasil mendapat balasan
-                    except Exception as e:  # Jika model ini gagal/error, simpan error dan coba model berikutnya
+                        balasan = hasil.choices[0].message.content
+                        break
+                    except Exception as e:
                         err_terakhir = e
                         continue
 
-                if balasan is None:  # Jika seluruh percobaan model gagal
+                if balasan is None:
                     balasan = f"Gagal memanggil model LLM. Detail: `{err_terakhir}`"
 
-                st.markdown(balasan)  # Tampilkan jawaban AI di layar
-                st.session_state.app_kos_chat.append({"role": "assistant", "content": balasan})  # Simpan balasan ke riwayat chat
+                st.markdown(balasan)
+                st.session_state.app_kos_chat.append({"role": "assistant", "content": balasan})
 
     st.markdown('</div>', unsafe_allow_html=True)
 
 # ==========================================
 # 9. REKOMENDASI PAKAR
 # ==========================================
-else:  # Jika pengguna memilih menu Rekomendasi Pakar
-    p_left, p_right = st.columns([1.05, 1], gap="large")  # Membagi halaman menjadi 2 kolom: input fakta (kiri) dan hasil inferensi (kanan)
-    with p_left:  # Kolom kiri: checkbox kondisi kebutuhan pengguna
+else:  # Logika fitur Rekomendasi Pakar (forward chaining)
+    p_left, p_right = st.columns([1.05, 1], gap="large")
+    with p_left:  # Checkbox fakta kebutuhan dan anggaran pengguna
         st.markdown('<div class="sec-card"><div class="sec-head">Kebutuhan &amp; Anggaranmu</div><div class="sec-sub">Centang kondisi yang sesuai untuk menjalankan penalaran aturan berantai.</div>', unsafe_allow_html=True)
-        f_hemat = st.checkbox("Budget bulanan ketat / hemat", value=True)  # Fakta budget ketat
-        f_longgar = st.checkbox("Budget bulanan longgar (>= Rp 1 juta)")  # Fakta budget longgar
-        f_dekat = st.checkbox("Ingin jarak dekat kampus")  # Fakta ingin dekat kampus
-        f_lokasi = st.checkbox("Lokasi strategis prioritas utama", value=True)  # Fakta prioritas lokasi
-        f_ac = st.checkbox("Perlu fasilitas AC")  # Fakta butuh AC
-        f_no_ac = st.checkbox("Tidak masalah tanpa AC", value=True)  # Fakta tidak masalah tanpa AC
-        f_wifi = st.checkbox("Perlu WiFi", value=True)  # Fakta butuh WiFi
-        st.button("Jalankan Rekomendasi")  # Tombol pemicu proses rekomendasi
+        f_hemat = st.checkbox("Budget bulanan ketat / hemat", value=True)
+        f_longgar = st.checkbox("Budget bulanan longgar (>= Rp 1 juta)")
+        f_dekat = st.checkbox("Ingin jarak dekat kampus")
+        f_lokasi = st.checkbox("Lokasi strategis prioritas utama", value=True)
+        f_ac = st.checkbox("Perlu fasilitas AC")
+        f_no_ac = st.checkbox("Tidak masalah tanpa AC", value=True)
+        f_wifi = st.checkbox("Perlu WiFi", value=True)
+        st.button("Jalankan Rekomendasi")
         st.markdown('</div>', unsafe_allow_html=True)
 
-    with p_right:  # Kolom kanan: hasil rekomendasi akhir dan jejak aturan forward chaining
+    with p_right:  # Menampilkan hasil rekomendasi dan jejak aturan yang aktif
         st.markdown('<div class="sec-card"><div class="sec-head">Rekomendasi &amp; Jejak Aturan</div><div class="sec-sub">Penalaran berantai (forward chaining) dari 11 aturan basis pengetahuan.</div>', unsafe_allow_html=True)
-        fakta_awal = []  # Menyusun daftar fakta awal berdasarkan checkbox yang dicentang
+        fakta_awal = []
         if f_hemat:
             fakta_awal.append("budget ketat")
         if f_longgar:
@@ -894,9 +889,9 @@ else:  # Jika pengguna memilih menu Rekomendasi Pakar
         if f_wifi:
             fakta_awal.append("butuh wifi")
 
-        _, jejak, rekomendasi = forward_chaining_kos(ATURAN_PAKAR, fakta_awal)  # Menjalankan mesin inferensi forward chaining
+        _, jejak, rekomendasi = forward_chaining_kos(ATURAN_PAKAR, fakta_awal)
 
-        for rek in rekomendasi:  # Menampilkan kartu rekomendasi akhir
+        for rek in rekomendasi:
             st.markdown(
                 f'<div class="est-highlight">'
                 f'<div class="est-lbl">Saran Pilihan Kos</div>'
@@ -905,10 +900,10 @@ else:  # Jika pengguna memilih menu Rekomendasi Pakar
                 unsafe_allow_html=True
             )
 
-        st.markdown("<div style='height:14px'></div><div style='font-weight:700; margin-bottom:6px;'>Jejak Aturan yang Terpicu:</div>", unsafe_allow_html=True)  # Judul daftar jejak aturan
-        if jejak:  # Jika ada aturan yang aktif
-            for idx, (kondisi, kesimpulan) in enumerate(jejak, start=1):  # Menampilkan alur IF ... THEN ... secara berurutan
+        st.markdown("<div style='height:14px'></div><div style='font-weight:700; margin-bottom:6px;'>Jejak Aturan yang Terpicu:</div>", unsafe_allow_html=True)
+        if jejak:
+            for idx, (kondisi, kesimpulan) in enumerate(jejak, start=1):
                 st.markdown(f"{idx}. JIKA `{' DAN '.join(kondisi)}` MAKA **{kesimpulan}**")
-        else:  # Jika tidak ada aturan yang terpicu
+        else:
             st.markdown("- Belum ada aturan yang terpicu dari fakta yang dipilih.")
         st.markdown('</div>', unsafe_allow_html=True)
